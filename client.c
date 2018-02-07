@@ -1,6 +1,5 @@
 #include "us_xfr.h"
 #include <arpa/inet.h>
-#include <sys/sysinfo.h>
 
 int main()
 {
@@ -8,7 +7,6 @@ int main()
     struct sockaddr_in addr;
     struct request req;
     struct response respServer;
-    struct sysinfo info;
     int reqId, argLen;
     char *argData;
 
@@ -44,18 +42,18 @@ int main()
 
         req.reqId = reqId;
         req.argLen = 0;
+        // req.argData = NULL;
+
 
         if (write(fdc, &req, sizeof(struct request)) == -1) {
             printf("write error in client\n");
         }
 
-        if (req.reqId == 1) {
-            sysinfo(&info);
-            printf("%ld\n", info.totalram);
-            printf("%ld\n", info.freeram);
+        read(fdc, &respServer, sizeof(struct response));
+        if (respServer.errCode == 0) {
+            printf("Id request: %d \n",respServer.reqId);
+            printf("%d\n",respServer.respData);
         }
-        // read(fdc,recvline,100);
-        // printf("%s",recvline);
     }
 
     close(fdc);
