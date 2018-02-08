@@ -10,7 +10,9 @@
 
 #define PORT 40000
 #define LOCALHOST "127.0.0.1"
-#define PATH_MEMINFO "/home/sacostache/Documents/meminfo"
+#define SUCCESS 0
+#define INTERN_ERROR -1
+#define EXTERN_ERROR 100
 
 struct request {
     int reqId;
@@ -22,5 +24,5 @@ struct response {
     int reqId;
     int errCode;
     int respLen;
-    char respData[100];
+    char respData[60];
 };
