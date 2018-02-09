@@ -3,14 +3,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-int fexit(int filed)
-{
-    if (close(filed) == -1) {
-        printf("error %d close server file descriptor: %s \n", errno, strerror(errno));
-        return -1;
-    }
-    return 0;
-}
+FILE *fdlog;
 
 int meminfo(char **memory)
 {
@@ -18,7 +11,7 @@ int meminfo(char **memory)
 
     FILE* file;
     if ((file = fopen("/proc/meminfo", "r")) == NULL) {
-        printf("error %d when open meminfo file: %s \n", errno, strerror(errno));
+        fprintf(fdlog, "error %d when open meminfo file: %s \n", errno, strerror(errno));
         fclose(file);
         return -1;
     }
@@ -29,7 +22,7 @@ int meminfo(char **memory)
         if (fgets(buff, sizeof(buff), file) != NULL) {
              buff[strlen(buff) - 1] = '\0'; 
         } else {
-            printf("error %d when open stat file: %s \n", errno, strerror(errno));
+            fprintf(fdlog, "error %d when open stat file: %s \n", errno, strerror(errno));
             fclose(file);
             return -1;
         }     
@@ -47,7 +40,7 @@ int cpuvalues(int cpu0[10])
     FILE* file; 
 
     if ((file = fopen("/proc/stat", "r")) == NULL) {
-        printf("error %d when open stat file: %s \n", errno, strerror(errno));
+        fprintf(fdlog, "error %d when open stat file: %s \n", errno, strerror(errno));
         return -1;
     }
 
@@ -75,14 +68,14 @@ float cpuinfo()
     float total0 = 0, total1 = 0, work0 = 0, work1 = 0, cpu;
     
     if (cpuvalues(cpu0) == -1) {
-        printf("error: can't get cpu values\n");
+        fprintf(fdlog, "error: can't get cpu values\n");
         return -1;
     }
 
     sleep(1);
 
     if (cpuvalues(cpu1) == -1) {
-        printf("error: can't get cpu values\n");
+        fprintf(fdlog, "error: can't get cpu values\n");
         return -1;
     }
 
@@ -139,25 +132,29 @@ int becomeDaemon()
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
 
-    fd = open("/dev/null", O_RDWR);
+    if ((fd = open("/dev/null", O_RDWR)) == -1) {
+        printf("error %d when try open /dev/null: %s\n", errno, strerror(errno));
+        return -1;
+    }
+
     if (fd != STDIN_FILENO)        
         return -1;
     if (dup2(STDIN_FILENO, STDOUT_FILENO) != STDOUT_FILENO)
         return -1;
     if (dup2(STDIN_FILENO, STDERR_FILENO) != STDERR_FILENO)
         return -1;
+    
+    if ((fdlog = fopen(LOGFILE, "w+")) == NULL) {
+        printf("error %d open logging file: %s\n", errno, strerror(errno));
+        return -1;
+    }
 
     return 0;
 }
 
 int main()
 {
-    if (becomeDaemon() == -1) {
-        printf("Can't create daemon!\n");
-        return -1;
-    }
-
-    int fds, new_fd;
+    int fds, new_fd, flag;
     float cpu;
     char *data;
     struct sockaddr_in addr;
@@ -165,9 +162,14 @@ int main()
     struct response resp;
     char buff[5];
 
+    if (becomeDaemon() == -1) {
+        printf("Can't create daemon!\n");
+        return -1;
+    }
+
     if ((fds = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        printf("Server socket number error: %d %s \n", errno, strerror(errno));
-        fexit(fds);
+        fprintf(fdlog, "Server socket number error: %d %s \n", errno, strerror(errno));
+        close(fds);
         return -1;
     }
 
@@ -177,65 +179,78 @@ int main()
     addr.sin_port = htons(PORT);
 
     if (bind(fds, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) == -1) {
-        printf("Server socket bind number error: %d %s \n", errno, strerror(errno));
-       fexit(fds);
+        fprintf(fdlog, "Server socket bind number error: %d %s \n", errno, strerror(errno));
+        close(fds);
         return -1;
     }
 
     if (listen(fds, 10) == -1) {
-        printf("error no %d at server listen: %s\n", errno, strerror(errno));
-       fexit(fds);
+        fprintf(fdlog, "error no %d at server listen: %s\n", errno, strerror(errno));
+        close(fds);
         return -1;
     }
 
     while(1) {
+        flag = 0;
+        
         if ((new_fd = accept(fds, (struct sockaddr*) NULL, NULL)) == -1) {
-            printf("error no %d at server accept: %s\n", errno, strerror(errno));
-            fexit(fds);
+            fprintf(fdlog, "error no %d at server accept: %s\n", errno, strerror(errno));
+            close(fds);
             return -1;
         }
-        memset(&reqClient, 0, sizeof(struct request));
-        memset(&resp, 0, sizeof(struct response));
 
-        if (read(new_fd, &reqClient, sizeof(struct request)) == -1) {
-            printf("error no %d when server try to read: %s\n", errno, strerror(errno));
-            fexit(new_fd);
-            continue;
-        }
+        while(flag == 0) {
+            memset(&reqClient, 0, sizeof(struct request));
+            memset(&resp, 0, sizeof(struct response));
 
-        data = malloc(100 * sizeof(char));
+            if (read(new_fd, &reqClient, sizeof(struct request)) == -1) {
+                fprintf(fdlog, "error no %d when server try to read: %s\n", errno, strerror(errno));
+                close(new_fd);
+                return -1;
+            }
 
-        switch(reqClient.reqId) {
-            case 1: 
-                strcpy(data, "");
-                if (meminfo(&data) == -1) {
-                    printf("error: can't process meminfo");
-                    setResponse(&resp, reqClient.reqId, INTERN_ERROR, "");
-                } else {
-                    setResponse(&resp, reqClient.reqId, SUCCESS, data);
-                }
-                break;
-            case 2:
-                if ((cpu = cpuinfo()) == -1) {
-                    printf("error: can't process cpuinfo");
-                    setResponse(&resp, reqClient.reqId, INTERN_ERROR, "");
-                } else {
-                    sprintf(buff, "%.2f", cpu);
-                    setResponse(&resp, reqClient.reqId, SUCCESS, buff);
-                }
-                break;
-            default: 
-                setResponse(&resp, reqClient.reqId, EXTERN_ERROR, "");
-                break;
-        }
+            data = malloc(100 * sizeof(char));
 
-        if (write(new_fd, &resp, sizeof(struct response)) == -1) {
-            printf("error no %d when server try to write: %s\n", errno, strerror(errno));
-            fexit(new_fd);
-            continue;
-        }
+            switch(reqClient.reqId) {
+                case 1: 
+                    strcpy(data, "");
+                    if (meminfo(&data) == -1) {
+                        fprintf(fdlog, "error: can't process meminfo");
+                        setResponse(&resp, reqClient.reqId, INTERN_ERROR, "");
+                    } else {
+                        setResponse(&resp, reqClient.reqId, SUCCESS, data);
+                    }
+                    break;
+                case 2:
+                    if ((cpu = cpuinfo()) == -1) {
+                        fprintf(fdlog, "error: can't process cpuinfo");
+                        setResponse(&resp, reqClient.reqId, INTERN_ERROR, "");
+                    } else {
+                        sprintf(buff, "%.2f", cpu);
+                        setResponse(&resp, reqClient.reqId, SUCCESS, buff);
+                    }
+                    break;
+                case 3:
+                    setResponse(&resp, reqClient.reqId, DISCONNECT, "");
+                    break;
+                default: 
+                    setResponse(&resp, reqClient.reqId, EXTERN_ERROR, "");
+                    break;
+            }
+
+            if (write(new_fd, &resp, sizeof(struct response)) == -1) {
+                fprintf(fdlog, "error no %d when server try to write: %s\n", errno, strerror(errno));
+                close(new_fd);
+                return -1;
+            }
+
+            if (resp.errCode == DISCONNECT) {
+                close(new_fd);
+                flag = 1;
+            }
+        }       
     }
 
-    fexit(fds);
+    close(fds);
     return 0;
 }

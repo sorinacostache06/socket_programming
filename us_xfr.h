@@ -10,9 +10,11 @@
 
 #define PORT 40000
 #define LOCALHOST "127.0.0.1"
+#define LOGFILE "/home/sacostache/Documents/log.txt"
 #define SUCCESS 0
 #define INTERN_ERROR -1
 #define EXTERN_ERROR 100
+#define DISCONNECT 1
 
 struct request {
     int reqId;

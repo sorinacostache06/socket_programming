@@ -46,34 +46,27 @@ int main()
         } else if (strcmp(cmd, "cpuinfo") == 0) {
             reqId = 2;
         } else if (strcmp(cmd, "disconnect") == 0) {
-            if (close(fdc) == -1) {
-                printf("error disconnect client\n");
-                return -1;
-            } else {
-                printf("Client disconnected with success!\n");
-                return 0;
-            }
-        } 
-        // else {
-        //     printf("this command does't exit\n");
-        //     reqId = -1;
-        // }
+            reqId = 3;
+        } else {
+            printf("this command does't exit\n");
+            reqId = -1;
+        }
         
         req.reqId = reqId;
         req.argLen = 0;
 
         if (write(fdc, &req, sizeof(struct request)) == -1) {
-            printf("error no %d when server try to write: %s\n", errno, strerror(errno));
+            printf("error no %d when client try to write: %s\n", errno, strerror(errno));
             if (close(fdc) == -1)
-                printf("error %d close server file descriptor: %s \n", errno, strerror(errno));
-            continue;
+                printf("error %d close client file descriptor: %s \n", errno, strerror(errno));
+            return -1;
         }
 
         if (read(fdc, &respServer, sizeof(struct response)) == -1) {
-            printf("error no %d when server try to write: %s\n", errno, strerror(errno));
+            printf("error no %d when client try to write: %s\n", errno, strerror(errno));
             if (close(fdc) == -1)
-                printf("error %d close server file descriptor: %s \n", errno, strerror(errno));
-            continue;
+                printf("error %d close client file descriptor: %s \n", errno, strerror(errno));
+            return -1;
         }
 
         if (respServer.errCode == SUCCESS) {
@@ -81,6 +74,9 @@ int main()
             printf("%s\n",respServer.respData);
         } else if (respServer.errCode == INTERN_ERROR) {
             printf("error processing the request %d\n", respServer.reqId);
+        } else if (respServer.errCode == DISCONNECT) {
+            printf("Client disconnect!\n");
+            return 0;
         } else {
             printf("request %d not implemented\n", respServer.reqId);
         }
