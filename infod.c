@@ -88,7 +88,7 @@ float cpuinfo()
         total1 += cpu1[i];
     }
 
-    cpu = ((work1 - work0)/(total1 - total0))*100;
+    cpu = ((work1 - work0)/(total1 - total0))*1000;
     return cpu;
 }
 
@@ -154,6 +154,11 @@ int becomeDaemon()
 
 int main()
 {
+    if (becomeDaemon() == -1) {
+        printf("Can't create daemon!\n");
+        return -1;
+    }
+
     int fds, new_fd, flag;
     float cpu;
     char *data;
@@ -161,11 +166,6 @@ int main()
     struct request reqClient;
     struct response resp;
     char buff[5];
-
-    if (becomeDaemon() == -1) {
-        printf("Can't create daemon!\n");
-        return -1;
-    }
 
     if ((fds = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         fprintf(fdlog, "Server socket number error: %d %s \n", errno, strerror(errno));
